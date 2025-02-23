@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Water Quality Monitoring Dashboard</title>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #ecf0f1;
+        }
+        .dashboard-title {
+            text-align: center;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: #fff;
+            padding: 20px 0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .chart-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            padding: 20px;
+        }
+        .chart-card {
+            background: white;
+            padding: 15px;
+            border-radius: 15px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            width: 30%;
+            min-width: 280px;
+            transition: transform 0.3s ease;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        .chart-card:hover {
+            transform: scale(1.03);
+        }
+        /* Alerts Section */
+        .alerts {
+            background-color: #f8d7da; /* light red/pink background */
+            color: #721c24;           /* dark red text */
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            width: 80%;
+            margin: 20px auto;
+            padding: 15px;
+            animation: fadeIn 1s ease-in-out;
+        }
+        .alerts h2 {
+            margin-top: 0;
+        }
+        /* Tables */
+        table {
+            width: 80%;
+            margin: 20px auto 30px auto;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            animation: fadeIn 1s ease-in-out;
+        }
+        table th, table td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+        table th {
+            background: #3498db;
+            color: white;
+        }
+        /* Responsive */
+        @media (max-width: 768px) {
+            .chart-container {
+                flex-direction: column;
+            }
+            .chart-card {
+                width: 90%;
+            }
+        }
+        /* Let Chart.js handle the chart's height. We only fix width to 100%. */
+        canvas {
+            width: 100% !important;
+        }
+        /* Fade-in Animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <h1 class="dashboard-title">Water Quality Monitoring Dashboard</h1>
+    
+    <!-- Chart Section -->
+    <div class="chart-container">
+        <!-- pH (Predicted vs Actual) -->
+        <div class="chart-card">
+            <h3>pH - Predicted vs Actual</h3>
+            <canvas id="phChart"></canvas>
+        </div>
+        <!-- Additional charts -->
+        <div class="chart-card">
+            <h3>Average Water Speed</h3>
+            <canvas id="waterSpeedChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Average Water Direction</h3>
+            <canvas id="waterDirectionChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Chlorophyll</h3>
+            <canvas id="chlorophyllChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Temperature</h3>
+            <canvas id="temperatureChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Dissolved Oxygen</h3>
+            <canvas id="dissolvedOxygenChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Dissolved Oxygen (% Saturation)</h3>
+            <canvas id="oxygenSaturationChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Salinity</h3>
+            <canvas id="salinityChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Specific Conductance</h3>
+            <canvas id="conductanceChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Turbidity</h3>
+            <canvas id="turbidityChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Alerts Section: Table of Minimum and Maximum Actual Values with Date/Time -->
+    <div class="alerts">
+        <h2>Alerts (Min/Max Values)</h2>
+        <table id="alertsTable">
+            <thead>
+                <tr>
+                    <th>Parameter</th>
+                    <th>Min Value (Actual)</th>
+                    <th>Min Time</th>
+                    <th>Max Value (Actual)</th>
+                    <th>Max Time</th>
+                </tr>
+            </thead>
+            <tbody id="alertsBody"></tbody>
+        </table>
+    </div>
+
+    <!-- Table for Latest Predicted Values -->
+    <table id="paramTable">
+        <tr>
+            <th>Parameter</th>
+            <th>Latest Predicted Value</th>
+            <th>Unit</th>
+            <th>Next Expected at</th>
+        </tr>
+    </table>
+
+    <!-- Scripts -->
+    <script>
+        // Set sample interval (e.g., 1 hour)
+        const sampleInterval = 3600000; // 1 hour in milliseconds
+
+        // Format date to a readable string
+        function formatDate(date) {
+            return date.toLocaleString();
+        }
+
+        // Common chart options: maintainAspectRatio = true, aspectRatio = 2
+        const numericIndexChartOptions = {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 2,
+            scales: {
+                x: {
+                    type: 'linear',
+                    display: false
+                }
+            }
+        };
+
+        // pH chart with numeric index and step size on Y
+        const pHChartOptions = {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 2,
+            scales: {
+                x: {
+                    type: 'linear',
+                    display: false
+                },
+                y: {
+                    title: { display: true, text: 'pH Value' },
+                    ticks: {
+                        callback: function(value) {
+                            return value.toFixed(2);
+                        },
+                        stepSize: 0.1
+                    }
+                }
+            }
+        };
+
+        /**
+         * Generate a smooth random-walk dataset for demonstration.
+         * - Each data point also gets a date/time stamp.
+         * - actualData: random walk within [minVal, maxVal]
+         * - predictedData: same as actual ± small offset
+         */
+        function generateRandomWalkData(numPoints=200, startVal=8.0, minVal=7.0, maxVal=9.0) {
+            const actualData = [];
+            const predictedData = [];
+            
+            // Start time is "now"
+            const startTime = new Date();
+            
+            let currA = startVal;
+            let currP = startVal;
+
+            // We'll space points 1 minute apart, but you can adjust as needed
+            for (let i = 0; i < numPoints; i++) {
+                // Each data point is i minutes after startTime
+                const pointTime = new Date(startTime.getTime() + i * 60000);
+
+                // random increment in [-0.15, 0.15] for the actual
+                const deltaA = (Math.random() - 0.5) * 0.3;
+                currA += deltaA;
+                // clamp actual
+                currA = Math.min(maxVal, Math.max(minVal, currA));
+
+                // predicted is actual plus a small offset in [-0.05, 0.05]
+                const offset = (Math.random() - 0.5) * 0.1;
+                currP = currA + offset;
+                // clamp predicted
+                currP = Math.min(maxVal, Math.max(minVal, currP));
+
+                // Add the data with date/time
+                actualData.push({
+                    x: i,                 // numeric index for plotting
+                    y: Number(currA.toFixed(2)),
+                    date: pointTime       // date/time stamp
+                });
+                predictedData.push({
+                    x: i,
+                    y: Number(currP.toFixed(2)),
+                    date: pointTime
+                });
+            }
+            return { actualData, predictedData };
+        }
+
+        // Define parameters with their units
+        const chartsInfo = [
+            { id: 'phChart', label: 'pH', unit: 'pH', chartOptions: pHChartOptions, minVal: 7, maxVal: 9, startVal: 8 },
+            { id: 'waterSpeedChart', label: 'Average Water Speed', unit: 'm/s', chartOptions: numericIndexChartOptions, minVal: 0, maxVal: 5, startVal: 2.5 },
+            { id: 'waterDirectionChart', label: 'Average Water Direction', unit: '°', chartOptions: numericIndexChartOptions, minVal: 0, maxVal: 360, startVal: 180 },
+            { id: 'chlorophyllChart', label: 'Chlorophyll', unit: 'µg/L', chartOptions: numericIndexChartOptions, minVal: 0, maxVal: 50, startVal: 25 },
+            { id: 'temperatureChart', label: 'Temperature', unit: '°C', chartOptions: numericIndexChartOptions, minVal: 0, maxVal: 40, startVal: 20 },
+            { id: 'dissolvedOxygenChart', label: 'Dissolved Oxygen', unit: 'mg/L', chartOptions: numericIndexChartOptions, minVal: 0, maxVal: 14, startVal: 7 },
+            { id: 'oxygenSaturationChart', label: 'Dissolved Oxygen (% Saturation)', unit: '%', chartOptions: numericIndexChartOptions, minVal: 0, maxVal: 120, startVal: 60 },
+            { id: 'salinityChart', label: 'Salinity', unit: 'ppt', chartOptions: numericIndexChartOptions, minVal: 0, maxVal: 35, startVal: 17.5 },
+            { id: 'conductanceChart', label: 'Specific Conductance', unit: 'µS/cm', chartOptions: numericIndexChartOptions, minVal: 0, maxVal: 1000, startVal: 500 },
+            { id: 'turbidityChart', label: 'Turbidity', unit: 'NTU', chartOptions: numericIndexChartOptions, minVal: 0, maxVal: 100, startVal: 50 }
+        ];
+
+        // 1) Build the main table rows for each parameter
+        const tableRef = document.getElementById('paramTable');
+        chartsInfo.forEach(item => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${item.label}</td>
+                <td id="${item.id}Value">Loading...</td>
+                <td>${item.unit}</td>
+                <td id="${item.id}Expected">Loading...</td>
+            `;
+            tableRef.appendChild(row);
+        });
+
+        // 2) Build the alerts table body (min & max actual values with date/time)
+        const alertsBody = document.getElementById('alertsBody');
+
+        // 3) Generate and render charts, then update both tables
+        chartsInfo.forEach(item => {
+            const { actualData, predictedData } = generateRandomWalkData(
+                200, // number of points
+                item.startVal,
+                item.minVal,
+                item.maxVal
+            );
+
+            // Create the chart
+            new Chart(document.getElementById(item.id), {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Actual ' + item.label,
+                            data: actualData,
+                            borderColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.2)',
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Predicted ' + item.label,
+                            data: predictedData,
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.2)',
+                            tension: 0.3,
+                            borderDash: [5, 5]
+                        }
+                    ]
+                },
+                options: item.chartOptions
+            });
+
+            // (A) Main Table: Update with last predicted value & next expected time
+            const lastPred = predictedData[predictedData.length - 1].y;
+            const nextExpectedTime = new Date(Date.now() + sampleInterval);
+            document.getElementById(item.id + 'Value').textContent = lastPred.toFixed(2);
+            document.getElementById(item.id + 'Expected').textContent = formatDate(nextExpectedTime);
+
+            // (B) Alerts Table: Find the highest & lowest actual value and their date/time
+            const maxDataPoint = actualData.reduce(
+                (maxDP, dp) => (dp.y > maxDP.y ? dp : maxDP),
+                actualData[0]
+            );
+            const minDataPoint = actualData.reduce(
+                (minDP, dp) => (dp.y < minDP.y ? dp : minDP),
+                actualData[0]
+            );
+
+            // Create a row for the alerts table with min and max info
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${item.label}</td>
+                <td>${minDataPoint.y.toFixed(2)}</td>
+                <td>${formatDate(minDataPoint.date)}</td>
+                <td>${maxDataPoint.y.toFixed(2)}</td>
+                <td>${formatDate(maxDataPoint.date)}</td>
+            `;
+            alertsBody.appendChild(row);
+        });
+    </script>
+</body>
+</html>
